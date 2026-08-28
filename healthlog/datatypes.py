@@ -26,8 +26,7 @@ class DataType:
     id: str
     scope: str
     page_size: int = PAGE_SIZE
-    # Whether this version can write it, which `types` reports so a caller
-    # never has to guess from a noun's name.
+    # Whether this version writes it, which `types` reports.
     writes: bool = False
 
     @property
@@ -95,20 +94,11 @@ PROMINENT = ("weight", "sleep", "exercise", "steps", "active-energy-burned")
 
 _BY_ID = {value.id: value for value in DATA_TYPES}
 
-# Reading is the whole point, so every type's read scope is requested. Writing
-# stays with food until a type has a write path of its own.
+# Every type's read scope, so no new type needs a second login.
 READ_SCOPES = tuple(
     sorted({f"{SCOPE_PREFIX}{value.scope}.readonly" for value in DATA_TYPES})
 )
-# A scope is per family, not per type, so these four cover writing every type
-# this tool could plausibly grow: body fat, height and glucose ride along with
-# weight, hydration with food, and exercise and sleep are the only families
-# left. Asked for together so adding one of those needs no second login.
-#
-# Deliberately absent: `reproductive_health`, `logged_symptoms`, `mindfulness`,
-# `location`, `profile` and `settings`. This tool handles none of that data,
-# and a food and weight logger asking to write reproductive health is both a
-# consent screen nobody should accept and a reason to fail Google's review.
+# Per family, so these four cover every type this tool could write.
 WRITE_SCOPES = (
     f"{SCOPE_PREFIX}nutrition.writeonly",
     f"{SCOPE_PREFIX}health_metrics_and_measurements.writeonly",

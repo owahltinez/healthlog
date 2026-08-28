@@ -132,9 +132,7 @@ def get_credentials() -> Credentials | None:
         return None
 
     try:
-        # The token's own scopes, not this version's. Google refuses to refresh
-        # a token for a scope it never granted, so asking for a scope added
-        # since the login would strand food logging over an unrelated type.
+        # The token's own scopes: a refresh fails for one never granted.
         creds = Credentials.from_authorized_user_info(
             token_data, token_data.get("scopes") or SCOPES
         )
@@ -250,8 +248,7 @@ def get_auth_status() -> dict[str, Any]:
         "authenticated": True,
         "expiry": creds.expiry.isoformat() if creds.expiry else None,
         "scopes": creds.scopes,
-        # A token predating a new data type is valid but reads less, and a 403
-        # deep in a read is a worse way to find that out than asking.
+        # Reported so a missing scope is not met as a 403 mid-read.
         "missing_scopes": sorted(set(SCOPES) - set(creds.scopes or [])),
         "has_credentials_configured": True,
         "using_default_credentials": not has_custom,

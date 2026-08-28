@@ -207,10 +207,7 @@ def build_meal(
     if resolved_grams == 0:
         raise UsageError("grams must be positive")
 
-    # An item's nutrients describe the weight it states, so another weight
-    # relabels them rather than converting them. Restating the core macros is
-    # no escape: an item carrying fibre or sugar keeps those at the old
-    # weight, which is the same error somewhere quieter.
+    # Nutrients describe the weight stated, so another relabels them.
     basis = _number(input_data.get("grams"), "grams")
     if basis is not None and resolved_grams != basis:
         raise UsageError(
@@ -341,8 +338,7 @@ today; one value must be a date and selects that local calendar day. An
 end date is inclusive; an end datetime is exclusive.
 """
 
-# Reads walk pages newest first, so a cap bounds a dense type's history
-# rather than silently cutting a day short. Truncation is always reported.
+# A cap bounds a dense type's history; truncation is always reported.
 DEFAULT_LIMIT = 500
 
 # Containers stating when a point happened, rather than what it recorded.
@@ -370,8 +366,7 @@ def _figures(payload: dict[str, Any]) -> str:
     for key, value in payload.items():
         if key in TIME_KEYS:
             continue
-        # A quantity is an object keyed by its unit, and the unit is the half
-        # of it a reader cannot guess: `energy` is kcal, `totalFat` grams.
+        # A quantity is keyed by its unit, which a reader cannot guess.
         if isinstance(value, dict) and len(value) == 1:
             ((unit, only),) = value.items()
             parts.append(f"{key}={only} {unit}")
@@ -397,8 +392,7 @@ def _points_human(data: dict[str, Any]) -> list[str]:
     return lines
 
 
-# A person can weigh 181 kg, so no range check tells kilos from pounds. This
-# only catches a slipped digit; the unit is caught by requiring it.
+# A person can weigh 181 kg: this catches a slipped digit, not a unit.
 MIN_KG, MAX_KG = 20.0, 500.0
 
 UNIT_HELP = "Required: a default would log pounds as kilos."
@@ -432,8 +426,7 @@ def _kg(value: float, unit: str) -> float:
     kilos = value * WEIGHT_UNITS[unit]
     if MIN_KG <= kilos <= MAX_KG:
         return kilos
-    # Naming the conversion only where there was one keeps kg from reading
-    # as "8.2 kg is 8.2 kg".
+    # Skip the conversion for kg, which would read "8.2 kg is 8.2 kg".
     stated = "" if WEIGHT_UNITS[unit] == 1.0 else f"{value:g} {unit} is "
     raise UsageError(
         f"{stated}{kilos:.1f} kg, outside {MIN_KG:g}-{MAX_KG:g} kg. "
@@ -875,9 +868,7 @@ def duplicate_command(
             duplicate = client.log_meal(duplicate)
     except GoogleHealthError as exc:
         raise _remote(exc) from exc
-    # The source is still there, and a caller that duplicated to correct
-    # something has not finished. Said here rather than only in the docs,
-    # because two entries for one meal double every total that covers them.
+    # Two entries for one meal double every total covering them.
     emit(
         meal_json(duplicate) | {"source": {"id": point_id, "deleted": False}},
         json_output=json_output,
@@ -1048,8 +1039,7 @@ for command in (
 ):
     app.add_command(command)
 
-# `food` is the nutrition log under the name people use for it, and it owns
-# the write path, so it is a group of its own rather than a generated read.
+# `food` owns a write path, so it is a group, not a generated read.
 for data_type in DATA_TYPES:
     if data_type not in (by_id("food"), by_id("weight"), by_id("height")):
         app.add_command(read_group(data_type))

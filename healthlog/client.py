@@ -147,8 +147,7 @@ class GoogleHealthClient:
             response.raise_for_status()
             page = response.json().get("dataPoints") or []
 
-        # Points arrive newest first, but taking the newest of the page costs
-        # one comparison and does not lean on that holding for every type.
+        # Documented newest-first, but the max costs one comparison.
         dated = [
             (moment, point)
             for point in page

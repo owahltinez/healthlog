@@ -165,8 +165,7 @@ class MealLog:
 GRAMS_PER_KG = 1000
 KG_PER_LB = 0.45359237
 
-# The standard symbol for each unit a weight may be stated in, and only that.
-# A unit symbol takes no plural, so there is no `kgs` or `lbs` to accept.
+# Standard symbols only: a unit symbol takes no plural, so no `kgs`.
 WEIGHT_UNITS = {"kg": 1.0, "lb": KG_PER_LB}
 
 
