@@ -5,8 +5,18 @@ description: Read Google Health data, log nutrient data, and inspect food histor
 
 # Healthlog
 
-Every data type is a noun, and every noun takes `history`. Food and weight are
-the two that also write. Use JSON output when consuming commands:
+Every data type is a noun. Every noun takes `history` and `latest`; the ones
+`healthlog types --json` marks `"writes": true` also take `log` and `delete`.
+Read that rather than guessing from a noun's name, and never tell a user a type
+cannot be written without checking it.
+
+`latest` exists because `history` answers a range. Height changes once a
+decade, so `height history` over today finds nothing and reads as "no height
+recorded" when a reading has been sitting there since 2017. For any value that
+holds until it changes — height, weight, VO2 max — ask `latest` first, and use
+`history` only when the question really is about a period.
+
+Use JSON output when consuming commands:
 
 ```console
 healthlog food log --input - --json
@@ -14,15 +24,19 @@ healthlog food history [START] [END] --json
 healthlog food duplicate POINT_ID --input - --json
 healthlog food delete POINT_ID --yes --json
 healthlog weight log VALUE --unit kg|lb --json
+healthlog weight latest --json
 healthlog weight history [START] [END] [--unit kg|lb] --json
 healthlog weight delete POINT_ID --yes --json
+healthlog height log VALUE --unit cm|m|in --json
+healthlog height latest --json
+healthlog TYPE latest --json
 healthlog types --json
 ```
 
-`weight log` writes, so run it only with user authorization, and never guess
-`--unit`: it is required because a default records 181 kg for someone who meant
-181 lb, and no later check can catch that. If the user states a number without
-a unit, ask which they mean rather than assuming.
+`weight log` and `height log` write, so run them only with user authorization,
+and never guess `--unit`. It is required because a default records 181 kg for
+someone who meant 181 lb, and no later check can catch that. If the user states
+a number without a unit, ask which they mean rather than assuming.
 
 `food log` writes to Google Health, so run it only with user authorization. New
 entries require `kcal`, `protein`, `fat`, and `carbs`. `--input -` accepts one

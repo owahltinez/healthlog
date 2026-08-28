@@ -170,6 +170,25 @@ KG_PER_LB = 0.45359237
 WEIGHT_UNITS = {"kg": 1.0, "lb": KG_PER_LB}
 
 
+MM_PER_CM = 10
+CM_PER_M = 100
+CM_PER_INCH = 2.54
+
+HEIGHT_UNITS = {"cm": 1.0, "m": float(CM_PER_M), "in": CM_PER_INCH}
+
+
+def _sample_time(sampled: datetime) -> dict[str, str]:
+    """The instant half of a sample record, which every sample type shares."""
+    return {
+        "physicalTime": sampled.isoformat(),
+        "utcOffset": _offset(sampled),
+    }
+
+
+def _point_id(data: dict[str, Any]) -> str | None:
+    return (data.get("name") or data.get("id") or "").split("/")[-1] or None
+
+
 @dataclass
 class WeightLog:
     """One body-weight reading. Google Health stores it in grams."""
@@ -181,10 +200,7 @@ class WeightLog:
     def to_api_payload(self) -> dict[str, Any]:
         return {
             "weight": {
-                "sampleTime": {
-                    "physicalTime": self.sampled.isoformat(),
-                    "utcOffset": _offset(self.sampled),
-                },
+                "sampleTime": _sample_time(self.sampled),
                 "weightGrams": self.kg * GRAMS_PER_KG,
             }
         }
@@ -193,12 +209,42 @@ class WeightLog:
     def from_api_payload(cls, data: dict[str, Any]) -> "WeightLog":
         log = data.get("weight", data)
         grams = _quantity(log, "weightGrams") or 0.0
-        sampled = point_time(log) or datetime.now(UTC)
         return cls(
             kg=grams / GRAMS_PER_KG,
-            sampled=sampled,
-            id=(data.get("name") or data.get("id") or "").split("/")[-1]
-            or None,
+            sampled=point_time(log) or datetime.now(UTC),
+            id=_point_id(data),
+        )
+
+
+@dataclass
+class HeightLog:
+    """One height reading, in millimetres.
+
+    Not a WeightLog with another field name: the API states height in whole
+    millimetres as a JSON string, the way it renders a 64-bit integer, where
+    weight is a plain number of grams.
+    """
+
+    cm: float
+    sampled: datetime
+    id: str | None = None
+
+    def to_api_payload(self) -> dict[str, Any]:
+        return {
+            "height": {
+                "sampleTime": _sample_time(self.sampled),
+                "heightMillimeters": str(round(self.cm * MM_PER_CM)),
+            }
+        }
+
+    @classmethod
+    def from_api_payload(cls, data: dict[str, Any]) -> "HeightLog":
+        log = data.get("height", data)
+        millimetres = _quantity(log, "heightMillimeters") or 0.0
+        return cls(
+            cm=millimetres / MM_PER_CM,
+            sampled=point_time(log) or datetime.now(UTC),
+            id=_point_id(data),
         )
 
 

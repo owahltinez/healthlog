@@ -28,15 +28,21 @@ from healthlog import __version__, auth
 from healthlog.client import GoogleHealthClient, GoogleHealthError
 from healthlog.datatypes import (
     DATA_TYPES,
+    FOOD_ID,
     PROMINENT,
     DataType,
     by_id,
     noun,
 )
 from healthlog.models import (
+    CM_PER_INCH,
+    CM_PER_M,
     GRAMS_PER_KG,
+    HEIGHT_UNITS,
     KG_PER_LB,
+    MM_PER_CM,
     WEIGHT_UNITS,
+    HeightLog,
     MealLog,
     MealType,
     TimeInterval,
@@ -398,6 +404,28 @@ MIN_KG, MAX_KG = 20.0, 500.0
 UNIT_HELP = "Required: a default would log pounds as kilos."
 UNIT_CHOICE = click.Choice(list(WEIGHT_UNITS), case_sensitive=False)
 
+LATEST_HELP = """Show the most recent reading, however old it is.
+
+A history covers a range, so a value recorded years ago and unchanged since
+reads as no value at all. This asks what it is rather than what changed.
+"""
+
+
+def _latest_point(data_type: DataType) -> dict[str, Any] | None:
+    try:
+        return GoogleHealthClient().latest(data_type)
+    except GoogleHealthError as exc:
+        raise _remote(exc) from exc
+
+
+def emit_none(what: str, json_output: bool) -> None:
+    """Nothing recorded, said once and the same way everywhere."""
+    emit(
+        {"count": 0, what: None},
+        json_output=json_output,
+        human=lambda data: [f"No {what} recorded."],
+    )
+
 
 def _kg(value: float, unit: str) -> float:
     """A stated weight in kilograms, whatever unit stated it."""
@@ -524,6 +552,147 @@ def weight_delete(point_id: str, yes: bool, json_output: bool) -> None:
     )
 
 
+@weight_app.command("latest", help=LATEST_HELP)
+@json_option
+def weight_latest(json_output: bool) -> None:
+    point = _latest_point(by_id("weight"))
+    if point is None:
+        emit_none("weight", json_output)
+        return
+    emit(
+        weight_json(WeightLog.from_api_payload(point)),
+        json_output=json_output,
+        human=lambda data: [
+            f"{data['kg']:.1f} kg ({data['lb']:.1f} lb)  {data['time']}"
+        ],
+    )
+
+
+MIN_CM, MAX_CM = 50.0, 250.0
+
+HEIGHT_UNIT_CHOICE = click.Choice(list(HEIGHT_UNITS), case_sensitive=False)
+
+
+def _cm(value: float, unit: str) -> float:
+    """A stated height in centimetres, whatever unit stated it."""
+    centimetres = value * HEIGHT_UNITS[unit]
+    if MIN_CM <= centimetres <= MAX_CM:
+        return centimetres
+    stated = "" if HEIGHT_UNITS[unit] == 1.0 else f"{value:g} {unit} is "
+    raise UsageError(
+        f"{stated}{centimetres:.1f} cm, outside {MIN_CM:g}-{MAX_CM:g} cm. "
+        "State the height you mean."
+    )
+
+
+def height_json(height: HeightLog) -> dict[str, Any]:
+    return {
+        "id": height.id,
+        "cm": height.cm,
+        "m": height.cm / CM_PER_M,
+        "in": height.cm / CM_PER_INCH,
+        # The figure Google Health actually stores, so a reader can check it.
+        "mm": round(height.cm * MM_PER_CM),
+        "time": height.sampled.isoformat(),
+    }
+
+
+def _height_human(data: dict[str, Any]) -> list[str]:
+    return [f"{data['cm']:.1f} cm ({data['in']:.1f} in)  {data['time']}"]
+
+
+@click.group("height")
+def height_app() -> None:
+    """Record and read height."""
+
+
+@height_app.command("log")
+@click.argument("value", type=float)
+@click.option("--unit", type=HEIGHT_UNIT_CHOICE, required=True, help=UNIT_HELP)
+@click.option("--time", "measured_at", help="ISO 8601 date-time.")
+@click.option("--dry-run", is_flag=True)
+@json_option
+def height_log(
+    value: float,
+    unit: str,
+    measured_at: str | None,
+    dry_run: bool,
+    json_output: bool,
+) -> None:
+    """Record a height, stating the unit it is in."""
+    height = HeightLog(cm=_cm(value, unit), sampled=_time(measured_at))
+    if not dry_run:
+        try:
+            height = GoogleHealthClient().log_height(height)
+        except GoogleHealthError as exc:
+            raise _remote(exc) from exc
+    emit(height_json(height), json_output=json_output, human=_height_human)
+
+
+@height_app.command("latest", help=LATEST_HELP)
+@json_option
+def height_latest(json_output: bool) -> None:
+    point = _latest_point(by_id("height"))
+    if point is None:
+        emit_none("height", json_output)
+        return
+    emit(
+        height_json(HeightLog.from_api_payload(point)),
+        json_output=json_output,
+        human=_height_human,
+    )
+
+
+@height_app.command("history", help=HISTORY_HELP)
+@click.argument("start", required=False)
+@click.argument("end", required=False)
+@limit_option(default=DEFAULT_LIMIT)
+@json_option
+def height_history(
+    start: str | None, end: str | None, limit: int, json_output: bool
+) -> None:
+    start_time, end_time = _bounds(start, end)
+    try:
+        points = GoogleHealthClient().points(
+            by_id("height"), start_time, end_time, limit=limit
+        )
+    except GoogleHealthError as exc:
+        raise _remote(exc) from exc
+    readings = [
+        height_json(HeightLog.from_api_payload(point)) for point in points
+    ]
+    emit(
+        {"count": len(readings), "readings": readings},
+        json_output=json_output,
+        human=lambda data: (
+            [f"{r['time'][:10]}  {r['cm']:.1f} cm" for r in data["readings"]]
+            or ["No height in that range. Try `healthlog height latest`."]
+        ),
+    )
+
+
+@height_app.command("delete")
+@click.argument("point_id")
+@click.option("--yes", is_flag=True, help="Skip confirmation.")
+@json_option
+def height_delete(point_id: str, yes: bool, json_output: bool) -> None:
+    """Delete one height reading explicitly."""
+    if json_output and not yes:
+        raise UsageError("delete --json needs --yes")
+    if not yes and not click.confirm(f"Delete height {point_id}?"):
+        click.echo("Deletion cancelled.")
+        return
+    try:
+        GoogleHealthClient().delete_point(by_id("height"), point_id)
+    except GoogleHealthError as exc:
+        raise _remote(exc) from exc
+    emit(
+        {"id": point_id, "deleted": True},
+        json_output=json_output,
+        human=lambda data: [f"Deleted {data['id']}."],
+    )
+
+
 def read_group(data_type: DataType) -> click.Group:
     """The `history` verb for one data type.
 
@@ -560,6 +729,23 @@ def read_group(data_type: DataType) -> click.Group:
                 "count": len(values),
                 "truncated": bool(limit) and len(values) >= limit,
                 "points": values,
+            },
+            json_output=json_output,
+            human=_points_human,
+        )
+
+    @group.command("latest", help=LATEST_HELP)
+    @json_option
+    def latest(json_output: bool) -> None:
+        point = _latest_point(data_type)
+        if point is None:
+            emit_none(data_type.id, json_output)
+            return
+        emit(
+            {
+                "count": 1,
+                "truncated": False,
+                "points": [point_json(data_type, point)],
             },
             json_output=json_output,
             human=_points_human,
@@ -746,6 +932,20 @@ def history_command(
     )
 
 
+@food_app.command("latest", help=LATEST_HELP)
+@json_option
+def food_latest(json_output: bool) -> None:
+    point = _latest_point(by_id(FOOD_ID))
+    if point is None:
+        emit_none("food", json_output)
+        return
+    emit(
+        meal_json(MealLog.from_api_payload(point)),
+        json_output=json_output,
+        human=_human,
+    )
+
+
 @click.group("auth")
 def auth_app() -> None:
     """Manage Google OAuth credentials."""
@@ -801,7 +1001,10 @@ def _types_human(data: dict[str, Any]) -> list[str]:
         spelling = value["noun"]
         if value["noun"] != value["id"]:
             spelling = f"{value['noun']} ({value['id']})"
-        lines.append(f"{spelling}  [{value['scope']}]")
+        verbs = (
+            "log, history, latest" if value["writes"] else "history, latest"
+        )
+        lines.append(f"{spelling}  [{value['scope']}]  {verbs}")
     return lines
 
 
@@ -810,7 +1013,12 @@ def _types_human(data: dict[str, Any]) -> list[str]:
 def types_command(json_output: bool) -> None:
     """List the data types this version can read."""
     values = [
-        {"noun": noun(value), "id": value.id, "scope": value.scope}
+        {
+            "noun": noun(value),
+            "id": value.id,
+            "scope": value.scope,
+            "writes": value.writes,
+        }
         for value in DATA_TYPES
     ]
     emit(
@@ -823,6 +1031,7 @@ def types_command(json_output: bool) -> None:
 for command in (
     food_app,
     weight_app,
+    height_app,
     auth_app,
     skill_group(name="healthlog", package="healthlog"),
 ):
@@ -831,5 +1040,5 @@ for command in (
 # `food` is the nutrition log under the name people use for it, and it owns
 # the write path, so it is a group of its own rather than a generated read.
 for data_type in DATA_TYPES:
-    if data_type not in (by_id("food"), by_id("weight")):
+    if data_type not in (by_id("food"), by_id("weight"), by_id("height")):
         app.add_command(read_group(data_type))

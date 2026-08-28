@@ -10,7 +10,7 @@ from google.oauth2.credentials import Credentials
 
 from healthlog.auth import get_credentials
 from healthlog.datatypes import FOOD_ID, DataType, by_id
-from healthlog.models import MealLog, WeightLog, point_time
+from healthlog.models import HeightLog, MealLog, WeightLog, point_time
 
 API_BASE_URL = "https://health.googleapis.com/v4"
 
@@ -107,6 +107,16 @@ class GoogleHealthClient:
             data = response.json()
             return WeightLog.from_api_payload(data.get("response", data))
 
+    def log_height(self, height: HeightLog) -> HeightLog:
+        url = f"{self.base_url}/users/me/dataTypes/height/dataPoints"
+        with self._client() as client:
+            response = client.post(
+                url, json=height.to_api_payload(), headers=self._headers()
+            )
+            response.raise_for_status()
+            data = response.json()
+            return HeightLog.from_api_payload(data.get("response", data))
+
     def delete_point(self, data_type: DataType, point_id: str) -> None:
         """Delete one data point of any type this tool can write."""
         url = (
@@ -119,6 +129,32 @@ class GoogleHealthClient:
                 url, json={"names": [name]}, headers=self._headers()
             )
             response.raise_for_status()
+
+    def latest(self, data_type: DataType) -> dict[str, Any] | None:
+        """The newest data point of a type, however old that is.
+
+        A range read answers "what was recorded then". For a value that
+        changes rarely, the question is "what is it", and a range finding
+        nothing reads as nothing ever recorded.
+        """
+        url = f"{self.base_url}/users/me/dataTypes/{data_type.id}/dataPoints"
+        with self._client() as client:
+            response = client.get(
+                url,
+                params={"pageSize": min(5, data_type.page_size)},
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            page = response.json().get("dataPoints") or []
+
+        # Points arrive newest first, but taking the newest of the page costs
+        # one comparison and does not lean on that holding for every type.
+        dated = [
+            (moment, point)
+            for point in page
+            if (moment := point_time(point.get(data_type.payload_key) or {}))
+        ]
+        return max(dated, key=lambda pair: pair[0])[1] if dated else None
 
     def points(
         self,

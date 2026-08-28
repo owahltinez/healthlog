@@ -19,6 +19,7 @@ from healthlog.datatypes import (
     noun,
 )
 from healthlog.models import (
+    HeightLog,
     MealLog,
     MealType,
     TimeInterval,
@@ -1112,3 +1113,138 @@ def test_weight_history_renders_the_unit_asked_for(monkeypatch) -> None:
     assert (
         round(json.loads(lb.output)["data"]["readings"][0]["lb"], 1) == 181.7
     )
+
+
+def test_height_states_millimetres_as_the_api_spells_them() -> None:
+    """Google Health returns `heightMillimeters` as a string, unlike the
+    number it returns for weight, so the write matches what the read gave."""
+    log = HeightLog(cm=195.0, sampled=datetime(2026, 8, 28, 7, tzinfo=UTC))
+
+    payload = log.to_api_payload()["height"]
+
+    assert payload["heightMillimeters"] == "1950"
+    assert payload["sampleTime"]["physicalTime"].startswith("2026-08-28T07:00")
+
+    restored = HeightLog.from_api_payload(log.to_api_payload())
+
+    assert restored.cm == 195.0
+
+
+def test_height_reads_the_string_the_api_really_sends() -> None:
+    point = {
+        "name": "users/me/dataTypes/height/dataPoints/1498694400000000",
+        "height": {
+            "sampleTime": {
+                "physicalTime": "2017-06-29T00:00:00Z",
+                "utcOffset": "0s",
+            },
+            "heightMillimeters": "1950",
+        },
+    }
+
+    restored = HeightLog.from_api_payload(point)
+
+    assert restored.cm == 195.0
+    assert restored.sampled.year == 2017
+
+
+def test_height_log_needs_a_unit_and_converts_each() -> None:
+    bare = CliRunner().invoke(app, ["height", "log", "195", "--dry-run"])
+    assert bare.exit_code != 0
+    assert "unit" in bare.output.lower()
+
+    for value, unit, expected in (("195", "cm", 195.0), ("1.95", "m", 195.0)):
+        result = CliRunner().invoke(
+            app,
+            ["height", "log", value, "--unit", unit, "--dry-run", "--json"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["data"]["cm"] == expected
+
+
+def test_height_outside_human_range_is_refused() -> None:
+    result = CliRunner().invoke(
+        app, ["height", "log", "1.95", "--unit", "cm", "--dry-run"]
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "cm" in result.output
+
+
+def test_latest_ignores_the_range_a_history_would_impose(monkeypatch) -> None:
+    """Height changes once a decade, so `history` over today reports none and
+    an agent concludes there is none. `latest` asks the question meant."""
+    old = {
+        "name": "users/me/dataTypes/height/dataPoints/h1",
+        "height": {
+            "sampleTime": {
+                "physicalTime": "2017-06-29T00:00:00Z",
+                "utcOffset": "0s",
+            },
+            "heightMillimeters": "1950",
+        },
+    }
+
+    class Client:
+        def latest(self, data_type) -> dict | None:
+            assert data_type.id == "height"
+            return old
+
+    monkeypatch.setattr("healthlog.cli.GoogleHealthClient", Client)
+    result = CliRunner().invoke(app, ["height", "latest", "--json"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)["data"]
+    assert data["cm"] == 195.0
+    assert data["time"].startswith("2017-06-29")
+
+
+def test_latest_reads_one_page_and_takes_the_newest() -> None:
+    seen: dict = {}
+    pages = [[sample_point(1), sample_point(20), sample_point(3)]]
+    client = read_client(pages, seen)
+
+    newest = client.latest(by_id("weight"))
+
+    assert newest is not None
+    assert newest["name"].endswith("p20")
+    # One request, and no range: a stored reading of any age must be findable.
+    assert len(seen["requests"]) == 1
+    assert "filter" not in seen["requests"][0]
+
+
+def test_latest_finds_nothing_without_inventing_it() -> None:
+    seen: dict = {}
+
+    assert read_client([[]], seen).latest(by_id("weight")) is None
+
+
+def test_every_noun_answers_latest(monkeypatch) -> None:
+    class Client:
+        def latest(self, data_type) -> dict | None:
+            return None
+
+    monkeypatch.setattr("healthlog.cli.GoogleHealthClient", Client)
+    nouns = ["food", "weight", "height"] + [
+        v.id for v in DATA_TYPES if v.id not in (FOOD_ID, "weight", "height")
+    ]
+    for word in nouns:
+        result = CliRunner().invoke(app, [word, "latest", "--json"])
+
+        assert result.exit_code == 0, f"{word}: {result.output}"
+
+
+def test_types_says_which_nouns_accept_a_write() -> None:
+    """An agent told nothing assumes read-only, and says so to the user."""
+    result = CliRunner().invoke(app, ["types", "--json"])
+
+    assert result.exit_code == 0, result.output
+    writes = {
+        value["noun"]: value["writes"]
+        for value in json.loads(result.output)["data"]["types"]
+    }
+    assert writes["food"] is True
+    assert writes["weight"] is True
+    assert writes["height"] is True
+    assert writes["steps"] is False

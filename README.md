@@ -1,6 +1,6 @@
 # Healthlog
 
-Read Google Health data, and write explicit nutrient data to it.
+Read every Google Health data type, and record food, weight and height.
 
 ```console
 healthlog auth login
@@ -17,14 +17,21 @@ healthlog weight log 82.4 --unit kg
 healthlog weight log 181 --unit lb
 healthlog weight history 2026-08-01 2026-08-27 --unit lb
 healthlog weight delete POINT_ID
+healthlog weight latest
+healthlog height log 195 --unit cm
+healthlog height latest
 healthlog sleep history yesterday
 healthlog types
 ```
 
 Every data type is a noun and every noun reads the same way, so a caller that
-can read one can read all of them. `healthlog types` lists them. Food and
-weight are the two this version writes, and the only nouns carrying more than
-`history`.
+can read one can read all of them. `healthlog types` lists them, and says which
+accept a write. Food, weight and height are the three this version writes.
+
+Every noun also takes `latest`, which reports the most recent reading however
+old it is. A `history` answers a range, so a height recorded once in 2017 and
+unchanged since reads as nothing at all when today is the range; `latest` asks
+what the value is rather than what changed.
 
 ## Food
 
@@ -67,7 +74,7 @@ Healthlog output. Unstated nutrients are omitted from writes. `--dry-run
 only when an entry states it, over the entries that state it, so a total may
 cover part of the range.
 
-## Weight
+## Weight and height
 
 `weight log` requires `--unit`, which takes `kg` or `lb`, the standard
 symbols. There is no default, because a defaulted unit records 181 kg for
@@ -81,6 +88,12 @@ default safely, because choosing one cannot change what is stored.
 A reading outside 20-500 kg is refused. That guard is for a slipped digit and
 nothing more: it cannot tell kilograms from pounds, which is why the unit is
 required rather than guessed.
+
+`height log` works the same way, taking `cm`, `m` or `in`, and refusing
+anything outside 50-250 cm. Google Health states height in whole millimetres as
+a string rather than a number, so the record it stores is `mm`. Height is the
+clearest case for `latest`: it is recorded once and left, so a range read
+covering only recent days reports none.
 
 ## Reading a range
 
@@ -105,9 +118,10 @@ dense type at 500 points by default; a capped read always says `truncated`, and
 
 `healthlog auth login` asks for the read scope of every type in
 `healthlog types`, so no future data type needs a second login to be read. It
-also asks for four write scopes. Two are used now, by food and weight; the
-other two cover exercise and sleep, the only families left that this tool could
-plausibly write, so growing into them costs no re-login either. It asks for
+also asks for four write scopes. Two are used now: one by food, one shared by
+weight and height. The other two cover exercise and sleep, the only families
+left that this tool could plausibly write, so growing into them costs no
+re-login either. It asks for
 nothing touching reproductive health, symptoms, mood, location, profile or
 settings, because it handles none of that. Google refuses to refresh a
 token for a scope it never granted, so a token from an earlier version keeps

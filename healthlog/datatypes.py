@@ -26,6 +26,9 @@ class DataType:
     id: str
     scope: str
     page_size: int = PAGE_SIZE
+    # Whether this version can write it, which `types` reports so a caller
+    # never has to guess from a noun's name.
+    writes: bool = False
 
     @property
     def payload_key(self) -> str:
@@ -39,10 +42,10 @@ class DataType:
 
 
 DATA_TYPES = (
-    DataType(FOOD_ID, "nutrition"),
+    DataType(FOOD_ID, "nutrition", writes=True),
     DataType("hydration-log", "nutrition"),
-    DataType("weight", "health_metrics_and_measurements"),
-    DataType("height", "health_metrics_and_measurements"),
+    DataType("weight", "health_metrics_and_measurements", writes=True),
+    DataType("height", "health_metrics_and_measurements", writes=True),
     DataType("body-fat", "health_metrics_and_measurements"),
     DataType("blood-glucose", "health_metrics_and_measurements"),
     DataType("core-body-temperature", "health_metrics_and_measurements"),
