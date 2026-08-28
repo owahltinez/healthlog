@@ -97,9 +97,20 @@ _BY_ID = {value.id: value for value in DATA_TYPES}
 READ_SCOPES = tuple(
     sorted({f"{SCOPE_PREFIX}{value.scope}.readonly" for value in DATA_TYPES})
 )
+# A scope is per family, not per type, so these four cover writing every type
+# this tool could plausibly grow: body fat, height and glucose ride along with
+# weight, hydration with food, and exercise and sleep are the only families
+# left. Asked for together so adding one of those needs no second login.
+#
+# Deliberately absent: `reproductive_health`, `logged_symptoms`, `mindfulness`,
+# `location`, `profile` and `settings`. This tool handles none of that data,
+# and a food and weight logger asking to write reproductive health is both a
+# consent screen nobody should accept and a reason to fail Google's review.
 WRITE_SCOPES = (
     f"{SCOPE_PREFIX}nutrition.writeonly",
     f"{SCOPE_PREFIX}health_metrics_and_measurements.writeonly",
+    f"{SCOPE_PREFIX}activity_and_fitness.writeonly",
+    f"{SCOPE_PREFIX}sleep.writeonly",
 )
 
 

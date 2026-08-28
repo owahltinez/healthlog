@@ -104,8 +104,12 @@ dense type at 500 points by default; a capped read always says `truncated`, and
 ## Authentication
 
 `healthlog auth login` asks for the read scope of every type in
-`healthlog types`, plus the write scopes food and weight need. Google refuses
-to refresh a
+`healthlog types`, so no future data type needs a second login to be read. It
+also asks for four write scopes. Two are used now, by food and weight; the
+other two cover exercise and sleep, the only families left that this tool could
+plausibly write, so growing into them costs no re-login either. It asks for
+nothing touching reproductive health, symptoms, mood, location, profile or
+settings, because it handles none of that. Google refuses to refresh a
 token for a scope it never granted, so a token from an earlier version keeps
 working for what it does cover: `healthlog auth status` reports the scopes it
 lacks, and a read it cannot do fails with a 403 naming the re-login.

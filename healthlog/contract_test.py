@@ -431,13 +431,29 @@ def test_client_posts_one_nutrition_log() -> None:
     assert seen["path"].endswith("/nutrition-log/dataPoints")
     assert seen["body"]["nutritionLog"]["energy"] == {"kcal": 0}
     assert saved.id == "123"
-    # Only what this version writes asks for a write scope.
+    # Pinned so a fifth write scope is a decision, never a drive-by.
     assert sorted(s for s in SCOPES if s.endswith("writeonly")) == sorted(
         [
             f"{SCOPE_PREFIX}nutrition.writeonly",
             f"{SCOPE_PREFIX}health_metrics_and_measurements.writeonly",
+            f"{SCOPE_PREFIX}activity_and_fitness.writeonly",
+            f"{SCOPE_PREFIX}sleep.writeonly",
         ]
     )
+
+
+def test_no_scope_reaches_data_this_tool_never_handles() -> None:
+    """Breadth is cheap to add and expensive to justify: a food and weight
+    logger asking to write reproductive health fails review, and rightly."""
+    for family in (
+        "reproductive_health",
+        "logged_symptoms",
+        "mindfulness",
+        "location",
+        "profile",
+        "settings",
+    ):
+        assert not any(family in scope for scope in SCOPES), family
 
 
 def test_client_filters_food_log_with_utc_range() -> None:
