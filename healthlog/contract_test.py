@@ -18,7 +18,13 @@ from healthlog.datatypes import (
     by_id,
     noun,
 )
-from healthlog.models import MealLog, MealType, TimeInterval, point_time
+from healthlog.models import (
+    MealLog,
+    MealType,
+    TimeInterval,
+    WeightLog,
+    point_time,
+)
 
 
 def meal(**changes) -> MealLog:
@@ -425,10 +431,13 @@ def test_client_posts_one_nutrition_log() -> None:
     assert seen["path"].endswith("/nutrition-log/dataPoints")
     assert seen["body"]["nutritionLog"]["energy"] == {"kcal": 0}
     assert saved.id == "123"
-    # Food is the only thing this version writes, so it owns the one write.
-    assert [scope for scope in SCOPES if scope.endswith("writeonly")] == [
-        "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly"
-    ]
+    # Only what this version writes asks for a write scope.
+    assert sorted(s for s in SCOPES if s.endswith("writeonly")) == sorted(
+        [
+            f"{SCOPE_PREFIX}nutrition.writeonly",
+            f"{SCOPE_PREFIX}health_metrics_and_measurements.writeonly",
+        ]
+    )
 
 
 def test_client_filters_food_log_with_utc_range() -> None:
@@ -675,10 +684,10 @@ def test_point_time_reads_every_record_shape() -> None:
     assert point_time({"displayName": "Oats"}) is None
 
 
-def sample_point(day: int, *, name: str = "p") -> dict:
+def sample_point(day: int, *, name: str = "p", key: str = "weight") -> dict:
     return {
-        "name": f"users/me/dataTypes/weight/dataPoints/{name}{day}",
-        "weight": {
+        "name": f"users/me/dataTypes/{key}/dataPoints/{name}{day}",
+        key: {
             "sampleTime": {
                 "physicalTime": f"2026-08-{day:02d}T00:00:00Z",
                 "utcOffset": "0s",
@@ -766,18 +775,19 @@ def test_generic_history_keeps_the_payload_verbatim(monkeypatch) -> None:
 
         def points(self, data_type, start, end, limit=0) -> list[dict]:
             Client.asked = (data_type.id, limit)
-            return [sample_point(20)]
+            return [sample_point(20, key="bodyFat")]
 
     monkeypatch.setattr("healthlog.cli.GoogleHealthClient", Client)
-    result = CliRunner().invoke(app, ["weight", "history", "--json"])
+    result = CliRunner().invoke(app, ["body-fat", "history", "--json"])
 
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)["data"]
     assert Client.asked is not None
-    assert Client.asked[0] == "weight"
+    assert Client.asked[0] == "body-fat"
     assert data["count"] == 1
     assert data["points"][0]["id"] == "p20"
     assert data["points"][0]["time"] == "2026-08-20T00:00:00+00:00"
+    # Whatever the record held, it survives unread and unreshaped.
     assert data["points"][0]["data"]["weightGrams"] == 82020
 
 
@@ -786,11 +796,14 @@ def test_generic_history_reports_a_truncated_read(monkeypatch) -> None:
 
     class Client:
         def points(self, data_type, start, end, limit=0) -> list[dict]:
-            return [sample_point(day) for day in range(20, 20 - limit, -1)]
+            return [
+                sample_point(day, key="bodyFat")
+                for day in range(20, 20 - limit, -1)
+            ]
 
     monkeypatch.setattr("healthlog.cli.GoogleHealthClient", Client)
     result = CliRunner().invoke(
-        app, ["weight", "history", "--limit", "2", "--json"]
+        app, ["body-fat", "history", "--limit", "2", "--json"]
     )
 
     assert result.exit_code == 0, result.output
@@ -964,3 +977,122 @@ def test_duplicate_refuses_to_relabel_a_weight(monkeypatch) -> None:
     assert result.exit_code == 1, result.output
     assert "90" in result.output and "250" in result.output
     assert Client.saved is None
+
+
+def test_weight_states_grams_at_the_sampled_time() -> None:
+    log = WeightLog(kg=82.4, sampled=datetime(2026, 8, 28, 7, tzinfo=UTC))
+
+    payload = log.to_api_payload()["weight"]
+
+    assert payload["weightGrams"] == 82400
+    assert payload["sampleTime"]["physicalTime"].startswith("2026-08-28T07:00")
+    assert payload["sampleTime"]["utcOffset"] == "0s"
+
+    restored = WeightLog.from_api_payload(log.to_api_payload())
+
+    assert restored.kg == 82.4
+
+
+def test_weight_log_needs_a_unit() -> None:
+    """A defaulted unit logs 181 kg for someone who meant pounds."""
+    result = CliRunner().invoke(app, ["weight", "log", "181", "--dry-run"])
+
+    assert result.exit_code != 0
+    assert "unit" in result.output.lower()
+
+
+def test_weight_log_converts_each_unit() -> None:
+    cases = {("82.4", "kg"): 82.4, ("181", "lb"): 82.1, ("181", "LB"): 82.1}
+    for (value, unit), expected in cases.items():
+        result = CliRunner().invoke(
+            app,
+            ["weight", "log", value, "--unit", unit, "--dry-run", "--json"],
+        )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)["data"]
+        assert round(data["kg"], 1) == expected, (value, unit)
+        # One stored truth, whatever unit stated it.
+        assert data["grams"] == round(data["kg"] * 1000, 3)
+
+
+def test_only_the_standard_unit_symbols_are_accepted() -> None:
+    """A unit symbol takes no plural, so `lbs` is not one."""
+    for unit in ("lbs", "kgs", "pounds", "kilos"):
+        result = CliRunner().invoke(
+            app, ["weight", "log", "82", "--unit", unit, "--dry-run"]
+        )
+
+        assert result.exit_code != 0, unit
+        assert "'kg', 'lb'" in result.output, unit
+
+
+def test_weight_outside_human_range_is_refused() -> None:
+    """A backstop for a slipped digit, not for a wrong unit: 181 kg is a
+    weight a person can have, so no range check can catch that one."""
+    for value in ("8.2", "620"):
+        result = CliRunner().invoke(
+            app,
+            ["weight", "log", value, "--unit", "kg", "--dry-run"],
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "kg" in result.output
+
+
+def test_weight_log_posts_to_the_weight_type() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={"response": seen["body"] | {"name": "users/me/w/9"}},
+        )
+
+    client = GoogleHealthClient(
+        credentials=Credentials(token="token"),
+        transport=httpx.MockTransport(handler),
+    )
+    saved = client.log_weight(
+        WeightLog(kg=82.4, sampled=datetime(2026, 8, 28, 7, tzinfo=UTC))
+    )
+
+    assert seen["path"].endswith("/weight/dataPoints")
+    assert seen["body"]["weight"]["weightGrams"] == 82400
+    assert saved.id == "9"
+
+
+def test_writing_weight_asks_for_the_scope_it_needs() -> None:
+    assert f"{SCOPE_PREFIX}health_metrics_and_measurements.writeonly" in SCOPES
+
+
+def test_weight_history_renders_the_unit_asked_for(monkeypatch) -> None:
+    point = {
+        "name": "users/me/dataTypes/weight/dataPoints/w1",
+        "weight": {
+            "sampleTime": {
+                "physicalTime": "2026-08-28T00:00:00Z",
+                "utcOffset": "0s",
+            },
+            "weightGrams": 82400,
+        },
+    }
+
+    class Client:
+        def points(self, data_type, start, end, limit=0) -> list[dict]:
+            return [point]
+
+    monkeypatch.setattr("healthlog.cli.GoogleHealthClient", Client)
+    kg = CliRunner().invoke(app, ["weight", "history", "--json"])
+    lb = CliRunner().invoke(
+        app, ["weight", "history", "--unit", "lb", "--json"]
+    )
+
+    assert kg.exit_code == 0, kg.output
+    assert json.loads(kg.output)["data"]["readings"][0]["kg"] == 82.4
+    assert lb.exit_code == 0, lb.output
+    assert (
+        round(json.loads(lb.output)["data"]["readings"][0]["lb"], 1) == 181.7
+    )

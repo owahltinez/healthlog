@@ -10,7 +10,7 @@ from google.oauth2.credentials import Credentials
 
 from healthlog.auth import get_credentials
 from healthlog.datatypes import FOOD_ID, DataType, by_id
-from healthlog.models import MealLog, point_time
+from healthlog.models import MealLog, WeightLog, point_time
 
 API_BASE_URL = "https://health.googleapis.com/v4"
 
@@ -94,6 +94,29 @@ class GoogleHealthClient:
                 url,
                 json={"names": [name]},
                 headers=self._headers(),
+            )
+            response.raise_for_status()
+
+    def log_weight(self, weight: WeightLog) -> WeightLog:
+        url = f"{self.base_url}/users/me/dataTypes/weight/dataPoints"
+        with self._client() as client:
+            response = client.post(
+                url, json=weight.to_api_payload(), headers=self._headers()
+            )
+            response.raise_for_status()
+            data = response.json()
+            return WeightLog.from_api_payload(data.get("response", data))
+
+    def delete_point(self, data_type: DataType, point_id: str) -> None:
+        """Delete one data point of any type this tool can write."""
+        url = (
+            f"{self.base_url}/users/me/dataTypes/"
+            f"{data_type.id}/dataPoints:batchDelete"
+        )
+        name = f"users/me/dataTypes/{data_type.id}/dataPoints/{point_id}"
+        with self._client() as client:
+            response = client.post(
+                url, json={"names": [name]}, headers=self._headers()
             )
             response.raise_for_status()
 

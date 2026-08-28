@@ -5,17 +5,24 @@ description: Read Google Health data, log nutrient data, and inspect food histor
 
 # Healthlog
 
-Every data type is a noun, and every noun takes `history`. Food is the only
-noun that also writes. Use JSON output when consuming commands:
+Every data type is a noun, and every noun takes `history`. Food and weight are
+the two that also write. Use JSON output when consuming commands:
 
 ```console
 healthlog food log --input - --json
 healthlog food history [START] [END] --json
 healthlog food duplicate POINT_ID --input - --json
 healthlog food delete POINT_ID --yes --json
-healthlog weight history [START] [END] --json
+healthlog weight log VALUE --unit kg|lb --json
+healthlog weight history [START] [END] [--unit kg|lb] --json
+healthlog weight delete POINT_ID --yes --json
 healthlog types --json
 ```
+
+`weight log` writes, so run it only with user authorization, and never guess
+`--unit`: it is required because a default records 181 kg for someone who meant
+181 lb, and no later check can catch that. If the user states a number without
+a unit, ask which they mean rather than assuming.
 
 `food log` writes to Google Health, so run it only with user authorization. New
 entries require `kcal`, `protein`, `fat`, and `carbs`. `--input -` accepts one

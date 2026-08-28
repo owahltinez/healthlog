@@ -13,14 +13,18 @@ healthlog food history 2026-08-17 2026-08-23
 healthlog food duplicate POINT_ID --protein 0
 healthlog food delete POINT_ID
 
-healthlog weight history 2026-08-01 2026-08-27
+healthlog weight log 82.4 --unit kg
+healthlog weight log 181 --unit lb
+healthlog weight history 2026-08-01 2026-08-27 --unit lb
+healthlog weight delete POINT_ID
 healthlog sleep history yesterday
 healthlog types
 ```
 
 Every data type is a noun and every noun reads the same way, so a caller that
-can read one can read all of them. `healthlog types` lists them. Food is the
-only type this version writes, and the only one with more than `history`.
+can read one can read all of them. `healthlog types` lists them. Food and
+weight are the two this version writes, and the only nouns carrying more than
+`history`.
 
 ## Food
 
@@ -63,6 +67,21 @@ Healthlog output. Unstated nutrients are omitted from writes. `--dry-run
 only when an entry states it, over the entries that state it, so a total may
 cover part of the range.
 
+## Weight
+
+`weight log` requires `--unit`, which takes `kg` or `lb`, the standard
+symbols. There is no default, because a defaulted unit records 181 kg for
+someone who meant 181 lb, and 181 kg is a weight a person can have, so nothing
+downstream can catch it. Google Health stores grams either way, so the unit
+chooses only how the figure is read, never what is kept.
+
+`weight history` takes `--unit` too, defaulting to `kg`. A display unit may
+default safely, because choosing one cannot change what is stored.
+
+A reading outside 20-500 kg is refused. That guard is for a slipped digit and
+nothing more: it cannot tell kilograms from pounds, which is why the unit is
+required rather than guessed.
+
 ## Reading a range
 
 Every `history` reads today by default. Pass one date for that day or two dates
@@ -85,7 +104,8 @@ dense type at 500 points by default; a capped read always says `truncated`, and
 ## Authentication
 
 `healthlog auth login` asks for the read scope of every type in
-`healthlog types`, plus the nutrition write scope. Google refuses to refresh a
+`healthlog types`, plus the write scopes food and weight need. Google refuses
+to refresh a
 token for a scope it never granted, so a token from an earlier version keeps
 working for what it does cover: `healthlog auth status` reports the scopes it
 lacks, and a read it cannot do fails with a 403 naming the re-login.

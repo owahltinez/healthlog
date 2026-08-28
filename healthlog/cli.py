@@ -33,7 +33,16 @@ from healthlog.datatypes import (
     by_id,
     noun,
 )
-from healthlog.models import MealLog, MealType, TimeInterval, point_time
+from healthlog.models import (
+    GRAMS_PER_KG,
+    KG_PER_LB,
+    WEIGHT_UNITS,
+    MealLog,
+    MealType,
+    TimeInterval,
+    WeightLog,
+    point_time,
+)
 
 ITEM_FIELDS = ("name", "meal_type", "time", "grams")
 # Every key an item may state, ordered so output follows the shared order.
@@ -382,6 +391,139 @@ def _points_human(data: dict[str, Any]) -> list[str]:
     return lines
 
 
+# A person can weigh 181 kg, so no range check tells kilos from pounds. This
+# only catches a slipped digit; the unit is caught by requiring it.
+MIN_KG, MAX_KG = 20.0, 500.0
+
+UNIT_HELP = "Required: a default would log pounds as kilos."
+UNIT_CHOICE = click.Choice(list(WEIGHT_UNITS), case_sensitive=False)
+
+
+def _kg(value: float, unit: str) -> float:
+    """A stated weight in kilograms, whatever unit stated it."""
+    kilos = value * WEIGHT_UNITS[unit]
+    if MIN_KG <= kilos <= MAX_KG:
+        return kilos
+    # Naming the conversion only where there was one keeps kg from reading
+    # as "8.2 kg is 8.2 kg".
+    stated = "" if WEIGHT_UNITS[unit] == 1.0 else f"{value:g} {unit} is "
+    raise UsageError(
+        f"{stated}{kilos:.1f} kg, outside {MIN_KG:g}-{MAX_KG:g} kg. "
+        "State the weight you mean."
+    )
+
+
+def weight_json(weight: WeightLog) -> dict[str, Any]:
+    return {
+        "id": weight.id,
+        "kg": weight.kg,
+        "lb": weight.kg / KG_PER_LB,
+        # The figure Google Health actually stores, so a reader can check it.
+        "grams": round(weight.kg * GRAMS_PER_KG, 3),
+        "time": weight.sampled.isoformat(),
+    }
+
+
+@click.group("weight")
+def weight_app() -> None:
+    """Record and read body weight."""
+
+
+@weight_app.command("log")
+@click.argument("value", type=float)
+@click.option(
+    "--unit",
+    type=UNIT_CHOICE,
+    required=True,
+    help=UNIT_HELP,
+)
+@click.option("--time", "measured_at", help="ISO 8601 date-time.")
+@click.option("--dry-run", is_flag=True)
+@json_option
+def weight_log(
+    value: float,
+    unit: str,
+    measured_at: str | None,
+    dry_run: bool,
+    json_output: bool,
+) -> None:
+    """Record a body weight, stating the unit it is in."""
+    weight = WeightLog(kg=_kg(value, unit), sampled=_time(measured_at))
+    if not dry_run:
+        try:
+            weight = GoogleHealthClient().log_weight(weight)
+        except GoogleHealthError as exc:
+            raise _remote(exc) from exc
+    emit(
+        weight_json(weight),
+        json_output=json_output,
+        human=lambda data: [
+            f"{data['kg']:.1f} kg ({data['lb']:.1f} lb)  {data['time']}"
+        ],
+    )
+
+
+@weight_app.command("history", help=HISTORY_HELP)
+@click.argument("start", required=False)
+@click.argument("end", required=False)
+@click.option("--unit", type=UNIT_CHOICE, default="kg", show_default=True)
+@limit_option(default=DEFAULT_LIMIT)
+@json_option
+def weight_history(
+    start: str | None,
+    end: str | None,
+    unit: str,
+    limit: int,
+    json_output: bool,
+) -> None:
+    start_time, end_time = _bounds(start, end)
+    try:
+        points = GoogleHealthClient().points(
+            by_id("weight"), start_time, end_time, limit=limit
+        )
+    except GoogleHealthError as exc:
+        raise _remote(exc) from exc
+    readings = [
+        weight_json(WeightLog.from_api_payload(point)) for point in points
+    ]
+    # A display unit cannot corrupt what is stored, so this one may default.
+    shown = "lb" if WEIGHT_UNITS[unit.lower()] != 1.0 else "kg"
+    emit(
+        {"count": len(readings), "unit": shown, "readings": readings},
+        json_output=json_output,
+        human=lambda data: (
+            [
+                f"{r['time'][:16].replace('T', ' ')}  {r[data['unit']]:.1f}"
+                f" {data['unit']}"
+                for r in data["readings"]
+            ]
+            or ["No weight recorded."]
+        ),
+    )
+
+
+@weight_app.command("delete")
+@click.argument("point_id")
+@click.option("--yes", is_flag=True, help="Skip confirmation.")
+@json_option
+def weight_delete(point_id: str, yes: bool, json_output: bool) -> None:
+    """Delete one weight reading explicitly."""
+    if json_output and not yes:
+        raise UsageError("delete --json needs --yes")
+    if not yes and not click.confirm(f"Delete weight {point_id}?"):
+        click.echo("Deletion cancelled.")
+        return
+    try:
+        GoogleHealthClient().delete_point(by_id("weight"), point_id)
+    except GoogleHealthError as exc:
+        raise _remote(exc) from exc
+    emit(
+        {"id": point_id, "deleted": True},
+        json_output=json_output,
+        human=lambda data: [f"Deleted {data['id']}."],
+    )
+
+
 def read_group(data_type: DataType) -> click.Group:
     """The `history` verb for one data type.
 
@@ -614,7 +756,7 @@ def auth_app() -> None:
 @click.option("--port", default=0, type=int)
 @click.option("--remote", is_flag=True)
 def auth_login(secrets: Path | None, port: int, remote: bool) -> None:
-    """Authorize reading every data type, and writing food."""
+    """Authorize reading every data type, and writing food and weight."""
     if remote or auth.is_headless_or_ssh():
         auth.login_remote(client_config_path=secrets)
     else:
@@ -680,6 +822,7 @@ def types_command(json_output: bool) -> None:
 
 for command in (
     food_app,
+    weight_app,
     auth_app,
     skill_group(name="healthlog", package="healthlog"),
 ):
@@ -688,5 +831,5 @@ for command in (
 # `food` is the nutrition log under the name people use for it, and it owns
 # the write path, so it is a group of its own rather than a generated read.
 for data_type in DATA_TYPES:
-    if data_type is not by_id("food"):
+    if data_type not in (by_id("food"), by_id("weight")):
         app.add_command(read_group(data_type))

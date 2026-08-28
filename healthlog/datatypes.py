@@ -97,7 +97,10 @@ _BY_ID = {value.id: value for value in DATA_TYPES}
 READ_SCOPES = tuple(
     sorted({f"{SCOPE_PREFIX}{value.scope}.readonly" for value in DATA_TYPES})
 )
-WRITE_SCOPES = (f"{SCOPE_PREFIX}nutrition.writeonly",)
+WRITE_SCOPES = (
+    f"{SCOPE_PREFIX}nutrition.writeonly",
+    f"{SCOPE_PREFIX}health_metrics_and_measurements.writeonly",
+)
 
 
 def by_id(value: str) -> DataType:

@@ -162,6 +162,46 @@ class MealLog:
         )
 
 
+GRAMS_PER_KG = 1000
+KG_PER_LB = 0.45359237
+
+# The standard symbol for each unit a weight may be stated in, and only that.
+# A unit symbol takes no plural, so there is no `kgs` or `lbs` to accept.
+WEIGHT_UNITS = {"kg": 1.0, "lb": KG_PER_LB}
+
+
+@dataclass
+class WeightLog:
+    """One body-weight reading. Google Health stores it in grams."""
+
+    kg: float
+    sampled: datetime
+    id: str | None = None
+
+    def to_api_payload(self) -> dict[str, Any]:
+        return {
+            "weight": {
+                "sampleTime": {
+                    "physicalTime": self.sampled.isoformat(),
+                    "utcOffset": _offset(self.sampled),
+                },
+                "weightGrams": self.kg * GRAMS_PER_KG,
+            }
+        }
+
+    @classmethod
+    def from_api_payload(cls, data: dict[str, Any]) -> "WeightLog":
+        log = data.get("weight", data)
+        grams = _quantity(log, "weightGrams") or 0.0
+        sampled = point_time(log) or datetime.now(UTC)
+        return cls(
+            kg=grams / GRAMS_PER_KG,
+            sampled=sampled,
+            id=(data.get("name") or data.get("id") or "").split("/")[-1]
+            or None,
+        )
+
+
 def point_time(payload: dict[str, Any]) -> datetime | None:
     """The instant a data point states, in whichever shape states it.
 
