@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "healthlog"
-version = "0.3.0"
+version = "0.3.1"
 description = "Read Google Health data, and log explicit nutrient data to it."
 readme = "README.md"
 requires-python = ">=3.12"

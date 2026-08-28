@@ -1248,3 +1248,26 @@ def test_types_says_which_nouns_accept_a_write() -> None:
     assert writes["weight"] is True
     assert writes["height"] is True
     assert writes["steps"] is False
+
+
+def test_duplicate_says_the_source_still_counts(monkeypatch) -> None:
+    """Leaving both is not the cautious outcome, it is a double count, and a
+    correction that stops after the copy has done exactly that."""
+    source = meal(id="old", protein=1, fat=1, carbs=1)
+
+    class Client:
+        def get_meal(self, point_id: str) -> MealLog:
+            return source
+
+        def log_meal(self, value: MealLog) -> MealLog:
+            value.id = "new"
+            return value
+
+    monkeypatch.setattr("healthlog.cli.GoogleHealthClient", Client)
+    human = CliRunner().invoke(app, ["food", "duplicate", "old"])
+    machine = CliRunner().invoke(app, ["food", "duplicate", "old", "--json"])
+
+    assert human.exit_code == 0, human.output
+    assert "old" in human.output and "still counts" in human.output
+    data = json.loads(machine.output)["data"]
+    assert data["source"] == {"id": "old", "deleted": False}

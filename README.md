@@ -64,6 +64,13 @@ records what was eaten; an Eatout meal is the usual case.
 result, then delete the source explicitly. JSON overrides may use `null` to
 remove a value.
 
+A duplicate reports the source it kept, and says it still counts. Two entries
+for one meal are totalled twice, so a correction that stops after the copy
+inflates the day; the delete is not optional caution, it is the second half of
+the edit. Google Health does document a patch method for updating a point in
+place, which would avoid the two steps, but it answers `500` for a nutrition
+log, so correcting really is copy-then-delete.
+
 Output carries `kcal`, `protein`, `fat` and `carbs` always, plus only the
 nutrients the entry states; an absent key and a `null` mean the same, while an
 explicit zero survives. Missing legacy Google core macros render as zero in

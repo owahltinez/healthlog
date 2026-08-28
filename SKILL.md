@@ -58,11 +58,26 @@ eaten.
 `history` defaults to today. Bounds accept `today`, `yesterday`, ISO dates, or
 offset-aware ISO datetimes. Dates use the device timezone.
 
-`food duplicate` creates a copy and never deletes its source. To correct an
-entry, duplicate it, inspect the copy, then delete the source only with
-explicit user authorization. Food output states the four core macros and only
-the nutrients an entry carries; an absent key means nothing is known, and
-totals ignore it.
+`food duplicate` creates a copy and never deletes its source, so it is how you
+log the same food a second time. It is only half of a correction.
+
+To correct an entry: duplicate it with the fix, inspect the copy, then delete
+the source. **Leaving the source is not the safe outcome.** Two entries for one
+meal are counted twice in every total covering them, so stopping after the copy
+silently inflates the day rather than erring on the side of caution. Deleting
+is the destructive-looking step, but skipping it is the one that corrupts data.
+
+Ask for authorization once, for the correction as a whole, and name both parts:
+"replace entry X with Y, deleting X". Do not treat the delete as a separate
+question to raise later, and never report a correction as done while the
+superseded entry is still there. If authorization for the delete is refused,
+delete the copy instead and leave the original, so the log still holds one
+entry per meal.
+
+Food output states the four core macros and only the nutrients an entry
+carries; an absent key means nothing is known, and totals ignore it. A
+`duplicate` reports its `source`, which stays `"deleted": false` until you
+delete it.
 
 A duplicate keeps the source time. To re-log the same food now, take the time
 from the device clock rather than a guess:

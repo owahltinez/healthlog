@@ -875,7 +875,18 @@ def duplicate_command(
             duplicate = client.log_meal(duplicate)
     except GoogleHealthError as exc:
         raise _remote(exc) from exc
-    emit(meal_json(duplicate), json_output=json_output, human=_human)
+    # The source is still there, and a caller that duplicated to correct
+    # something has not finished. Said here rather than only in the docs,
+    # because two entries for one meal double every total that covers them.
+    emit(
+        meal_json(duplicate) | {"source": {"id": point_id, "deleted": False}},
+        json_output=json_output,
+        human=lambda data: [
+            *_human(data),
+            f"Source {data['source']['id']} still counts. Delete it if this "
+            "replaced it, or both are totalled.",
+        ],
+    )
 
 
 @food_app.command("delete")
