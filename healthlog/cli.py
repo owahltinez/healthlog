@@ -348,14 +348,17 @@ TIME_KEYS = ("interval", "sampleTime", "date")
 def point_json(data_type: DataType, point: dict[str, Any]) -> dict[str, Any]:
     """One data point, keeping the record the API stated verbatim.
 
-    Only the time is lifted out, because every type states one somewhere and
-    a caller sorting or filtering should not have to know which shape.
+    The time is lifted out because every type states one somewhere and a
+    caller sorting or filtering should not have to know which shape. The
+    source is lifted out because two trackers recording the same activity
+    both appear here, and a total over all of them counts it twice.
     """
     payload = point.get(data_type.payload_key) or {}
     moment = point_time(payload)
     return {
         "id": (point.get("name") or "").split("/")[-1] or None,
         "time": moment.isoformat() if moment else None,
+        "source": point.get("dataSource"),
         "data": payload,
     }
 
@@ -377,11 +380,27 @@ def _figures(payload: dict[str, Any]) -> str:
     return "  ".join(parts) or "(no figures)"
 
 
+def _source_label(source: dict[str, Any] | None) -> str:
+    """The narrowest name a source states, since platform alone repeats."""
+    if not source:
+        return "?"
+    app = (source.get("application") or {}).get("packageName")
+    device = source.get("device") or {}
+    return (
+        app
+        or device.get("displayName")
+        or device.get("manufacturer")
+        or source.get("platform")
+        or "?"
+    )
+
+
 def _points_human(data: dict[str, Any]) -> list[str]:
     if not data["points"]:
         return ["No data points."]
     lines = [
         f"{point['time'] or '?'}  {_figures(point['data'])}"
+        f"  [{_source_label(point['source'])}]"
         for point in data["points"]
     ]
     if data["truncated"]:

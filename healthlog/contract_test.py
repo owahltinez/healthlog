@@ -9,7 +9,7 @@ from google.oauth2.credentials import Credentials
 from mealtime_nutrients import CORE_NUTRIENTS, NUTRIENTS
 
 from healthlog.auth import SCOPES, TOKEN_URI, get_auth_status, get_credentials
-from healthlog.cli import _total, app, meal_json
+from healthlog.cli import _total, app, meal_json, point_json
 from healthlog.client import GoogleHealthClient, GoogleHealthError
 from healthlog.datatypes import (
     DATA_TYPES,
@@ -1271,3 +1271,51 @@ def test_duplicate_says_the_source_still_counts(monkeypatch) -> None:
     assert "old" in human.output and "still counts" in human.output
     data = json.loads(machine.output)["data"]
     assert data["source"] == {"id": "old", "deleted": False}
+
+
+def test_point_json_states_which_source_recorded_it() -> None:
+    """Two trackers write the same steps, so a total over both doubles it."""
+    point = sample_point(20, key="steps") | {
+        "dataSource": {
+            "platform": "FITBIT",
+            "device": {"displayName": "MobileTrack"},
+        }
+    }
+
+    assert point_json(by_id("steps"), point)["source"] == {
+        "platform": "FITBIT",
+        "device": {"displayName": "MobileTrack"},
+    }
+
+
+def test_point_json_states_a_missing_source_as_none() -> None:
+    assert (
+        point_json(by_id("steps"), sample_point(20, key="steps"))["source"]
+        is None
+    )
+
+
+def test_human_history_names_each_point_source(monkeypatch) -> None:
+    """Summing a printed column by eye doubles a day the same way."""
+    sources = [
+        {"platform": "FITBIT", "device": {"displayName": "MobileTrack"}},
+        {
+            "platform": "HEALTH_CONNECT",
+            "application": {"packageName": "com.xiaomi.wearable"},
+            "device": {"manufacturer": "xiaomi"},
+        },
+    ]
+
+    class Client:
+        def points(self, data_type, start, end, limit=0) -> list[dict]:
+            return [
+                sample_point(20 + offset, key="steps") | {"dataSource": source}
+                for offset, source in enumerate(sources)
+            ]
+
+    monkeypatch.setattr("healthlog.cli.GoogleHealthClient", Client)
+    result = CliRunner().invoke(app, ["steps", "history"])
+
+    assert result.exit_code == 0, result.output
+    assert "MobileTrack" in result.output
+    assert "com.xiaomi.wearable" in result.output

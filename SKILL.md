@@ -25,9 +25,10 @@ offset-aware ISO datetimes. Dates use the device timezone. Reads cap at 500
 points and report `truncated` when the cap was hit; pass `--limit 0` for a
 complete range.
 
-Each point carries `id`, `time`, and `data` holding the record verbatim as
-Google Health stated it, so read the figures out of `data` rather than assuming
-field names.
+Each point carries `id`, `time`, `source`, and `data` holding the record
+verbatim as Google Health stated it, so read the figures out of `data` rather
+than assuming field names. `source` names the app or device that recorded the
+point, and is `null` when the record states none.
 
 `latest` exists because `history` answers a range. Height changes once a
 decade, so `height history` over today finds nothing and reads as "no height
@@ -127,6 +128,13 @@ today` returns dozens of one-minute points, so a daily figure is the sum of
 their values, not the point count or the last point. The value key differs per
 type and is not guessable — steps hold `count`, distance `millimeters`, energy
 `kcal` — so read one point's `data` before summing.
+
+Sum one source, never all of them. Every point carries the `source` that
+recorded it, and a phone and a watch worn together both record the same
+walking, in buckets of different lengths that no de-duplication by time can
+reconcile. Summing every point returns roughly double, which reads as a
+plausible day rather than an error. Group by `source`, say which one the
+figure came from, and report the others' totals rather than blending them.
 
 ## Weight and height
 
