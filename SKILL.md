@@ -66,7 +66,8 @@ healthlog food duplicate POINT_ID --input - --json
 healthlog food delete POINT_ID --yes --json
 ```
 
-`food log` writes to Google Health, so run it only with user authorization. New
+`food log` writes to Google Health. If user intent is clear and the item is
+unambiguous, log it directly; otherwise obtain authorization first. New
 entries require `kcal`, `protein`, `fat`, and `carbs`. `--input -` accepts one
 flat JSON item from Pantry, Eatout, Recipes, or Healthlog: pipe their `--json`
 output whole, envelope included, and unknown fields are dropped. An object you
