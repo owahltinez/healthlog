@@ -258,14 +258,14 @@ wheels = [
 
 [[package]]
 name = "click-agentcli"
-version = "0.4.1"
+version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5f/f3/38a4a99f28121e48e848681dd80b54e490ec32a86d09a2d33f5c1a5d22cc/click_agentcli-0.4.1.tar.gz", hash = "sha256:f8bef4e82b2d61957764af3d806bc377eaba43bbd363552a966a04aecf05e9bb", size = 25736, upload-time = "2026-08-29T01:11:34.368Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/95/d67b0431b9f8673b31cf057f6e640fc80b92d2a8dc2f7cb9bbb0cc8dbfdf/click_agentcli-0.5.0.tar.gz", hash = "sha256:0140851d505d10c7ea871595f378a9131ac0b7210bc53925e5590470a5cb6c2e", size = 28544, upload-time = "2026-09-07T00:54:59.293Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/81/e50bd1adf77cc31283b642b729f9aefc002b0a5e1338dec19539b902c39d/click_agentcli-0.4.1-py3-none-any.whl", hash = "sha256:a39bc96c364970225ddbede45bc4307b4f73013f32c2744e6a02807b1aee27c6", size = 26364, upload-time = "2026-08-29T01:11:32.949Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/d3/8db99f36e9152a52d8ef9ba03ab38f351ada328c5cc8d246d780b2d6b0a4/click_agentcli-0.5.0-py3-none-any.whl", hash = "sha256:3a7ff557bd65bb583ee499eb720b9aef1b724d185260234b421399202214e020", size = 29625, upload-time = "2026-09-07T00:54:57.903Z" },
 ]
 
 [[package]]
@@ -384,7 +384,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.1" },
-    { name = "click-agentcli", specifier = ">=0.4.1" },
+    { name = "click-agentcli", specifier = ">=0.5.0" },
     { name = "google-auth", specifier = ">=2.28.0" },
     { name = "google-auth-oauthlib", specifier = ">=1.2.0" },
     { name = "httpx", specifier = ">=0.27.0" },
